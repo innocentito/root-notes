@@ -34,39 +34,6 @@ Got in, but the directory was completely empty so nothing useful here. Anonymous
 
 ---
 
-## Port 22 – SSH (OpenSSH 4.7)
-
-Tried the default Metasploitable2 credentials:
-
-```bash
-ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa -oMACs=+hmac-sha1 msfadmin@192.168.66.2
-# Password: msfadmin
-```
-
-The extra flags are needed because modern Kali doesn't support the old crypto algorithms that this ancient SSH version uses. Got the hint straight from the error message and looked it up. Once in, just ran:
-
-```bash
-sudo su
-```
-
-Root. Done. Took maybe 30 seconds total.
-
----
-
-## Port 23 – Telnet
-
-Same idea as SSH, just way less secure because everything goes over plaintext:
-
-```bash
-telnet 192.168.66.2
-# Login: msfadmin
-# Password: msfadmin
-```
-
-Then `sudo su` again for root. In a real network anyone sniffing traffic with Wireshark would see these credentials fly by in plain text. That's how bad Telnet is.
-
----
-
 ## Port 25 – SMTP (Postfix)
 
 This one isn't about getting root directly, it's about figuring out which users exist on the system. The VRFY command lets you check if a username is valid:
@@ -143,24 +110,6 @@ This gives you tab completion, a proper prompt, and the ability to use commands 
 
 ---
 
-## Port 1524 – Bindshell
-
-This one is almost embarrassing. nmap literally told me:
-
-```
-1524/tcp open  bindshell   Metasploitable root shell
-```
-
-A root shell just sitting wide open on port 1524. No exploit needed, no credentials, nothing:
-
-```bash
-nc 192.168.66.2 1524
-```
-
-That's it, you're root. One command. In a real scenario this would be a backdoor left by a previous attacker. The lesson here is to always read your nmap output carefully because it basically handed me root for free.
-
----
-
 ## Port 3306 – MySQL
 
 Connected directly to MySQL without any password:
@@ -188,27 +137,17 @@ Threw the hashes into CrackStation and they all cracked instantly. These are uns
 
 Also found that the `guest` user had ALL privileges including `CREATE USER`, `DROP` and `SHUTDOWN` which is a disaster. In a real engagement you could create your own admin user, drop databases, or just shut the whole server down.
 
-From the Samba root shell I also grabbed the system password hashes:
-
-```bash
-cat /etc/shadow
-```
-
-Got MD5crypt hashes for msfadmin, klog, postgres, user and service accounts. These are stronger than the plain MD5 web hashes but still crackable with hashcat or john. The `$1$` prefix tells you it's MD5crypt.
-
 ---
 
 ## What I Learned
 
-Default credentials and unpatched software are the easiest wins in pentesting. SSH, Telnet, DVWA and MySQL all fell without any real effort because nobody changed the defaults. The Samba exploit was a bit more involved but still just a couple of commands in Metasploit.
-
-Reading nmap output carefully matters more than I expected. Port 1524 was literally labeled "root shell" in the scan results and I almost skipped past it. Now I read every line.
-
-Linux handles passwords in two files. `/etc/passwd` is readable by everyone and just has an `x` where the password used to be. The actual hashes live in `/etc/shadow` which only root can read. So getting root first and then reading shadow is the play. The hash format tells you the algorithm too. `$1$` is MD5crypt, `$5$` is SHA-256, `$6$` is SHA-512.
+The Samba exploit showed how a single unsanitized input can give you root. Understanding what the exploit actually does (shell metacharacter injection via username field) matters more than just running `exploit` in Metasploit.
 
 Upgrading shells with `python -c 'import pty; pty.spawn("/bin/bash")'` is something I do every single time now. A raw netcat shell is painful to work with.
 
 The SMTP user enumeration trick is underrated. You might not get root directly from it but building a list of valid usernames makes everything else easier. You go from guessing to targeted attacks.
+
+Linux handles passwords in two files. `/etc/passwd` is readable by everyone and just has an `x` where the password used to be. The actual hashes live in `/etc/shadow` which only root can read. The hash format tells you the algorithm: `$1$` is MD5crypt, `$5$` is SHA-256, `$6$` is SHA-512.
 
 ---
 
