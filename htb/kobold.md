@@ -34,7 +34,6 @@ Got back `DNS:kobold.htb, DNS:*.kobold.htb`. The wildcard tells us there are sub
 echo "10.129.23.150 kobold.htb" | sudo tee -a /etc/hosts
 ```
 
-Quick note on why you need `sudo tee -a` instead of just `>>`. The redirect `>>` runs without root privileges even if you put sudo in front of echo. With `tee -a` the actual file write happens with sudo, and `-a` means append so you don't overwrite the whole file.
 
 ### Subdomain Hunting
 
