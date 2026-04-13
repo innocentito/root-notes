@@ -1,4 +1,4 @@
-# Metasploitable2 Walkthrough – How I Got Root on Every Port
+# Metasploitable2 Walkthrough
 
 **Target:** Metasploitable2 (192.168.66.2)
 **Attacker:** Kali Linux in UTM
