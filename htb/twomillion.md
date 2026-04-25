@@ -24,8 +24,6 @@ echo "10.10.11.221 2million.htb" | sudo tee -a /etc/hosts
 
 ### The Website
 
-The site looks exactly like the old HackTheBox platform before they redesigned it. Back in the day you couldn't just register an account, you had to solve a challenge first to get an invite code. This box recreates that entire experience.
-
 Most of the navigation links are dead. They all point to anchors on the same page like `2million.htb/#about` or `2million.htb/#subscribe`. The only interesting page is `/invite` which asks for an invite code. No obvious way to get one though.
 
 ### Finding the Invite System
