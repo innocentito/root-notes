@@ -1,7 +1,7 @@
 # OverTheWire Bandit – Walkthrough (Levels 0–14)
 
 **Game:** OverTheWire Bandit  
-**Difficulty:** Absolute Beginner  
+**Difficulty:** Absolute Beginner - Intermediate, scaling 
 **What it teaches:** Linux basics, file handling, SSH, compression, encoding
 
 So Bandit is basically the "hello world" of wargames. It teaches you how to move around a Linux system, read files, and deal with annoying filenames. Sounds easy but some of these levels have little gotchas that'll trip you up if you're not paying attention. Here's how I got through each one.
