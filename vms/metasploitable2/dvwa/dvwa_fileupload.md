@@ -1,6 +1,6 @@
 # DVWA File Upload – Metasploitable2
 
-**Target:** Metasploitable2 (<TARGET_IP>)
+**Target:** Metasploitable2 
 **Attacker:** Kali Linux
 **Category:** File Upload + Local File Inclusion
 **App:** DVWA (Damn Vulnerable Web Application)
