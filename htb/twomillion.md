@@ -1,6 +1,6 @@
 # TwoMillion – HackTheBox Writeup
 
-**Target:** TwoMillion (2million.htb)  
+**Target:** TwoMillion (10.10.11.221)  
 **Attacker:** Kali Linux  
 **OS:** Linux (Ubuntu 22.04)  
 **Difficulty:** Easy  
